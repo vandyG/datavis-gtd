@@ -1,0 +1,22 @@
+[project]
+name = "homework1"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ipywidgets>=8.1.5",
+    "matplotlib>=3.10.0",
+    "nbformat>=5.10.4",
+    "pandas>=2.2.3",
+    "plotly>=6.0.0",
+    "pycountry>=24.6.1",
+    "seaborn>=0.13.2",
+    "statsmodels>=0.14.4",
+    "wordcloud>=1.9.4",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+]
