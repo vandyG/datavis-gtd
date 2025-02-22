@@ -2,7 +2,7 @@
 import plotly.graph_objects as go
 import pycountry
 from pandas import DataFrame, Index, options, read_csv, to_datetime
-from plotly.express import scatter_geo
+from plotly.express import bar, scatter_geo
 from statsmodels.tsa.filters.hp_filter import hpfilter
 
 # %%
@@ -20,15 +20,15 @@ data.head()
 
 
 # %%
-data.shape  # noqa: B018
+data.shape
 
 
 # %%
-data.columns  # noqa: B018
+data.columns
 
 
 # %%
-data.dtypes  # noqa: B018
+data.dtypes
 
 
 # %%
@@ -54,7 +54,7 @@ print("Categorical:", len(categorical_cols))  # noqa: T201
 
 
 # %% [markdown]
-#   ## Cardinality Analysis
+#    ## Cardinality Analysis
 
 
 # %%
@@ -106,30 +106,32 @@ def analyze_categorical_cardinality(df: DataFrame, input_cols: Index) -> None:
 
 
 # %% [markdown]
-#   ### Categorical Cols
+#    ### Categorical Cols
 
 # %%
 analyze_categorical_cardinality(data, categorical_cols)
 
 
 # %% [markdown]
-#   ### Numeric Cols
+#    ### Numeric Cols
 
 # %%
 analyze_categorical_cardinality(data, numeric_cols)
 
 
 # %% [markdown]
-#   ## Duplicate Analysis
+#    ## Duplicate Analysis
 
 # %%
 any(data.duplicated(subset=["eventid"]))
 
 
 # %% [markdown]
-# ## Fixing Missing Dates
-# - Back Fill if approx date is not valid. (As data is ordered by date.)
-# - Fill with approx date if valid.
+#  ## Fixing Missing Dates
+#
+#  - Back Fill if approx date is not valid. (As data is ordered by date.)
+#
+#  - Fill with approx date if valid.
 
 # %%
 data["event_date"] = to_datetime(
@@ -152,7 +154,7 @@ data["event_date"] = data["event_date"].fillna(approx_dates3)
 
 
 # %% [markdown]
-#   ## Number of events by date.
+#    ## Number of events by date.
 
 # %%
 # Sort by event date.
@@ -274,33 +276,51 @@ fig.show()
 
 
 # %% [markdown]
-#   The nuber of events peaked in 1979.
+#    The nuber of events peaked in 1979.
 #
 #
 #
-#   No data or no attacks in the year 1993.
 #
 #
 #
-#  The trend shows a rise in recent years.
+#
+#    No data or no attacks in the year 1993.
+#
+#
+#
+#
+#
+#
+#
+#   The trend shows a rise in recent years.
 
 # %% [markdown]
-# ## Events by Region
+#  ## Events by Region
 
 # %%
 data["region"].unique()
 
+
 # %%
 data["region_txt"].unique()
 
+
 # %% [markdown]
-# This data is only for Western Europe.
+#  This data is only for Western Europe.
+
+# %% [markdown]
+# ### Incidents each year (by couuntry)
 
 # %%
-yearly_country_counts = data.groupby(["year", "country", "country_txt"]).size().reset_index(name="count")
-yearly_country_counts["total_py"] = yearly_country_counts.groupby("year")["count"].transform("sum")
-yearly_country_counts["proportion"] = yearly_country_counts["count"] / yearly_country_counts["total_py"]
-# yearly_country_counts.head(20)
+data["year"] = data["event_date"].dt.year
+yearly_counts = data.groupby(["year", "country", "country_txt"]).size().reset_index(name="count")
+yearly_counts["total_py"] = yearly_counts.groupby("year")["count"].transform("sum")
+yearly_counts["proportion"] = yearly_counts["count"] / yearly_counts["total_py"]
+# yearly_counts.head(20)
+
+
+# %%
+yearly_counts.head()
 
 # %%
 countries = {}
@@ -313,6 +333,7 @@ codes["Vatican City"] = "VAT"
 
 yearly_counts["codes"] = yearly_counts["country_txt"].apply(lambda x: codes[x])
 
+
 # %%
 fig = scatter_geo(
     yearly_counts,
@@ -321,6 +342,7 @@ fig = scatter_geo(
     size="proportion",
     animation_frame="year",
     projection="natural earth",
+    title="Incidents by year",
 )
 
 # fig.update_geos(fitbounds="locations")
@@ -330,6 +352,243 @@ fig.update_geos(
     resolution=110,
     scope="europe",
     showcountries=True,
+)
+
+fig.show()
+
+
+# %% [markdown]
+# ### Total incidents (by country)
+
+# %%
+total_counts = data.groupby("country_txt").size().reset_index(name="counts")
+total_counts = total_counts.sort_values(by="counts")
+
+# %%
+fig = bar(
+    total_counts,
+    x="country_txt",
+    y="counts",
+    labels={"country_txt": "Countries", "counts": "Incidents"},
+    title="Incident per country",
+)
+fig.show()
+
+# %% [markdown]
+# ### Incident Locations (by country)
+
+# %%
+years = sorted(data["year"].unique())
+countries = sorted(data["country_txt"].unique())
+
+initial_year = years[0]
+df_initial = data[data["year"] == initial_year]
+
+# Create the figure and add one trace per country (for the initial year)
+fig = go.Figure()
+
+for country in countries:
+    df_country = df_initial[df_initial["country_txt"] == country]
+    fig.add_trace(
+        go.Scattergeo(
+            lon=df_country["longitude"],
+            lat=df_country["latitude"],
+            text=df_country["event_date"],
+            mode="markers",
+            marker={"size": 8, "opacity": 0.7},
+            name=country,
+        )
+    )
+
+# Build animation frames - one frame for each year
+frames = []
+for year in years:
+    frame_traces = []
+    df_year = data[data["year"] == year]
+    for country in countries:
+        df_country = df_year[df_year["country_txt"] == country]
+        # Each trace in the frame corresponds to the country trace created above
+        frame_traces.append(
+            go.Scattergeo(
+                lon=df_country["longitude"],
+                lat=df_country["latitude"],
+                text=df_country["event_date"],
+                mode="markers",
+                marker={"size": 8, "opacity": 0.7},
+                name=country,
+            )
+        )
+    frames.append(go.Frame(data=frame_traces, name=str(year)))
+
+fig.frames = frames
+
+# Create a slider that will step through each year
+slider_steps = []
+for year in years:
+    step = {
+        "method": "animate",
+        "args": [[str(year)], {"frame": {"duration": 500, "redraw": True}, "mode": "immediate"}],
+        "label": str(year),
+    }
+    slider_steps.append(step)
+
+sliders = [
+    {
+        "active": 0,
+        "currentvalue": {"prefix": "Year: "},
+        "pad": {"t": 50},
+        "steps": slider_steps,
+    }
+]
+
+# Create a dropdown menu for filtering by country.
+# When "All" is selected, all country traces are visible.
+# When a specific country is selected, only that trace is shown.
+updatemenus = [
+    {
+        "buttons": list(
+            [
+                {
+                    "args": [{"visible": [True] * len(countries)}],
+                    "label": "All",
+                    "method": "update",
+                },
+            ]
+            + [
+                {
+                    "args": [{"visible": [c == country for c in countries]}],
+                    "label": country,
+                    "method": "update",
+                }
+                for country in countries
+            ]
+        ),
+        "direction": "down",
+        "pad": {"r": 10, "t": 10},
+        "showactive": True,
+        "x": 0.1,
+        "xanchor": "left",
+        "y": 1.15,
+        "yanchor": "top",
+    },
+]
+
+# Update the layout with the geo map settings, slider, and dropdown menu
+fig.update_layout(
+    title="Terrorist Events in Western Europe",
+    geo={
+        "scope": "europe",
+        "projection_type": "natural earth",
+    },
+    sliders=sliders,
+    updatemenus=updatemenus,
+)
+
+# Display the figure
+fig.show()
+
+
+# %%
+# Load your data; adjust the file path as needed
+df = data
+# Ensure numeric types for coordinates
+df["latitude"] = df["latitude"].astype(float)
+df["longitude"] = df["longitude"].astype(float)
+
+event_coords = df.set_index("eventid")[["latitude", "longitude"]].to_dict("index")
+
+df_connected = df[df["multiple"] == 1]
+
+# %%
+# Create the base figure
+# Create the base figure
+fig = go.Figure()
+
+# Initialize with data from the first year
+initial_year = years[0]
+df_initial = df_connected[df_connected["year"] == initial_year]
+initial_traces = []
+for related, _ in df_initial.groupby("related"):
+    related_ids = [int(eid.strip()) for eid in related.split(",")]
+    if len(related_ids) > 1:
+        lats, lons, texts = [], [], []
+        for eid in related_ids:
+            if eid in event_coords:
+                lats.append(event_coords[eid]["latitude"])
+                lons.append(event_coords[eid]["longitude"])
+                texts.append(str(eid))
+        if len(lats) > 1:
+            initial_traces.append(
+                go.Scattergeo(
+                    lon=lons,
+                    lat=lats,
+                    mode="lines+markers",
+                    line={"color": "red", "width": 2},
+                    marker={"size": 6, "color": "orange"},
+                    text=texts,
+                )
+            )
+
+# Set the initial data if available
+if initial_traces:
+    fig.add_traces(initial_traces)
+
+# Build frames for each year (as before)
+frames = []
+for year in years:
+    frame_traces = []
+    df_current = df_connected[df_connected["year"] == year]
+    for related, _ in df_current.groupby("related"):
+        related_ids = [int(eid.strip()) for eid in related.split(",")]
+        if len(related_ids) > 1:
+            lats, lons, texts = [], [], []
+            for eid in related_ids:
+                if eid in event_coords:
+                    lats.append(event_coords[eid]["latitude"])
+                    lons.append(event_coords[eid]["longitude"])
+                    texts.append(str(eid))
+            if len(lats) > 1:
+                frame_traces.append(
+                    go.Scattergeo(
+                        lon=lons,
+                        lat=lats,
+                        mode="lines+markers",
+                        line={"color": "red", "width": 2},
+                        marker={"size": 6, "color": "orange"},
+                        text=texts,
+                    )
+                )
+    frames.append(go.Frame(data=frame_traces, name=str(year)))
+
+fig.frames = frames
+
+# Create the slider steps (as before)
+slider_steps = []
+for year in years:
+    step = {
+        "method": "animate",
+        "args": [[str(year)], {"frame": {"duration": 500, "redraw": True}, "mode": "immediate"}],
+        "label": str(year),
+    }
+    slider_steps.append(step)
+
+sliders = [
+    {
+        "active": 0,
+        "currentvalue": {"prefix": "Year: "},
+        "pad": {"t": 50},
+        "steps": slider_steps,
+    }
+]
+
+# Update the layout with geo map settings and slider
+fig.update_layout(
+    title="Connected Terrorist Events in Western Europe",
+    geo={
+        "scope": "europe",
+        "projection_type": "natural earth",
+    },
+    sliders=sliders,
 )
 
 fig.show()
