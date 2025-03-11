@@ -1,8 +1,8 @@
 # %%
 import plotly.graph_objects as go
 import pycountry
-from pandas import DataFrame, Index, options, read_csv, to_datetime
-from plotly.express import bar, scatter_geo
+from pandas import NA, DataFrame, Index, options, read_csv, to_datetime
+from plotly.express import bar, line, scatter_geo
 from statsmodels.tsa.filters.hp_filter import hpfilter
 
 # %%
@@ -397,7 +397,7 @@ for country in countries:
             mode="markers",
             marker={"size": 8, "opacity": 0.7},
             name=country,
-        )
+        ),
     )
 
 # Build animation frames - one frame for each year
@@ -416,7 +416,7 @@ for year in years:
                 mode="markers",
                 marker={"size": 8, "opacity": 0.7},
                 name=country,
-            )
+            ),
         )
     frames.append(go.Frame(data=frame_traces, name=str(year)))
 
@@ -438,7 +438,7 @@ sliders = [
         "currentvalue": {"prefix": "Year: "},
         "pad": {"t": 50},
         "steps": slider_steps,
-    }
+    },
 ]
 
 # Create a dropdown menu for filtering by country.
@@ -461,7 +461,7 @@ updatemenus = [
                     "method": "update",
                 }
                 for country in countries
-            ]
+            ],
         ),
         "direction": "down",
         "pad": {"r": 10, "t": 10},
@@ -488,107 +488,63 @@ fig.update_layout(
 fig.show()
 
 
-# %%
-# Load your data; adjust the file path as needed
-df = data
-# Ensure numeric types for coordinates
-df["latitude"] = df["latitude"].astype(float)
-df["longitude"] = df["longitude"].astype(float)
-
-event_coords = df.set_index("eventid")[["latitude", "longitude"]].to_dict("index")
-
-df_connected = df[df["multiple"] == 1]
+# %% [markdown]
+# ## Incident Criterias
 
 # %%
-# Create the base figure
-# Create the base figure
+data["doubtterr"] = data["doubtterr"].replace(-9, NA)
+
+# %%
+crit_counts = data.groupby("year")[["crit1", "crit2", "crit3", "doubtterr"]].sum().reset_index()
+crit_counts.head()
+
+# %%
 fig = go.Figure()
 
-# Initialize with data from the first year
-initial_year = years[0]
-df_initial = df_connected[df_connected["year"] == initial_year]
-initial_traces = []
-for related, _ in df_initial.groupby("related"):
-    related_ids = [int(eid.strip()) for eid in related.split(",")]
-    if len(related_ids) > 1:
-        lats, lons, texts = [], [], []
-        for eid in related_ids:
-            if eid in event_coords:
-                lats.append(event_coords[eid]["latitude"])
-                lons.append(event_coords[eid]["longitude"])
-                texts.append(str(eid))
-        if len(lats) > 1:
-            initial_traces.append(
-                go.Scattergeo(
-                    lon=lons,
-                    lat=lats,
-                    mode="lines+markers",
-                    line={"color": "red", "width": 2},
-                    marker={"size": 6, "color": "orange"},
-                    text=texts,
-                )
-            )
+legend_labels = {
+    "crit1": "Political, Economic,<br>Religious, or Social Goal",
+    "crit2": "Intention to Coerce,Intimidate<br>or Publicize to Larger Audience",
+    "crit3": "Outside International<br>Humanitarian Law",
+    "doubtterr": "Doubt Terrorism Proper?",
+}
 
-# Set the initial data if available
-if initial_traces:
-    fig.add_traces(initial_traces)
+for col in ["crit1", "crit2", "crit3", "doubtterr"]:
+    fig.add_trace(go.Scatter(x=crit_counts["year"], y=crit_counts[col], mode="lines+markers", name=legend_labels[col]))
 
-# Build frames for each year (as before)
-frames = []
-for year in years:
-    frame_traces = []
-    df_current = df_connected[df_connected["year"] == year]
-    for related, _ in df_current.groupby("related"):
-        related_ids = [int(eid.strip()) for eid in related.split(",")]
-        if len(related_ids) > 1:
-            lats, lons, texts = [], [], []
-            for eid in related_ids:
-                if eid in event_coords:
-                    lats.append(event_coords[eid]["latitude"])
-                    lons.append(event_coords[eid]["longitude"])
-                    texts.append(str(eid))
-            if len(lats) > 1:
-                frame_traces.append(
-                    go.Scattergeo(
-                        lon=lons,
-                        lat=lats,
-                        mode="lines+markers",
-                        line={"color": "red", "width": 2},
-                        marker={"size": 6, "color": "orange"},
-                        text=texts,
-                    )
-                )
-    frames.append(go.Frame(data=frame_traces, name=str(year)))
-
-fig.frames = frames
-
-# Create the slider steps (as before)
-slider_steps = []
-for year in years:
-    step = {
-        "method": "animate",
-        "args": [[str(year)], {"frame": {"duration": 500, "redraw": True}, "mode": "immediate"}],
-        "label": str(year),
-    }
-    slider_steps.append(step)
-
-sliders = [
-    {
-        "active": 0,
-        "currentvalue": {"prefix": "Year: "},
-        "pad": {"t": 50},
-        "steps": slider_steps,
-    }
-]
-
-# Update the layout with geo map settings and slider
 fig.update_layout(
-    title="Connected Terrorist Events in Western Europe",
-    geo={
-        "scope": "europe",
-        "projection_type": "natural earth",
+    title="Different inclusion criterias over the years",
+    xaxis_title="Year",
+    yaxis_title="Count",
+    xaxis={"showspikes": True},
+    hovermode="x unified",
+    legend={
+        "yanchor": "top",
+        "y": 0.99,
+        "xanchor": "right",
+        "x": 0.99,
+        "bgcolor": "rgba(0,0,0,0)",
     },
-    sliders=sliders,
 )
+
+
+fig.show()
+
+# %% [markdown]
+# #### Categorization of the incident other than terrorism
+
+# %%
+alt_counts = data[data["doubtterr"] == 1].groupby(["year", "alternative_txt"]).size().reset_index(name="count")
+
+# %%
+fig = line(
+    alt_counts,
+    x="year",
+    y="count",
+    color="alternative_txt",
+    symbol="alternative_txt",
+    labels={"alternative_txt": "Alternative Designation"},
+)
+fig.update_traces(hovertemplate="%{y}")
+fig.update_layout(xaxis={"showspikes": True}, hovermode="x unified")
 
 fig.show()
